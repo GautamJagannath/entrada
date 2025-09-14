@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { adobePDFService } from '@/lib/adobe-pdf-services';
+import { californiaPDFService } from '@/lib/adobe-pdf-services';
 import { getCase } from '@/lib/cases';
 
 export async function POST(request: NextRequest) {
@@ -14,17 +14,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Validate Adobe credentials
-    if (!process.env.ADOBE_CLIENT_ID || !process.env.ADOBE_CLIENT_SECRET) {
-      console.error('Adobe PDF Services not configured');
-      return NextResponse.json(
-        {
-          error: 'PDF service not configured',
-          message: 'Adobe PDF Services credentials are not set up. Please contact administrator.'
-        },
-        { status: 503 }
-      );
-    }
+    // PDF service is always available with pdf-lib
+    console.log('Using pdf-lib for California court form filling');
 
     // Get case data
     const caseData = await getCase(caseId);
@@ -38,7 +29,7 @@ export async function POST(request: NextRequest) {
     console.log(`Generating PDFs for case ${caseId}...`);
 
     // Generate PDFs
-    const generatedForms = await adobePDFService.generateGuardianshipForms(caseData);
+    const generatedForms = await californiaPDFService.generateGuardianshipForms(caseData);
 
     // Convert buffers to base64 for JSON response
     const formsData: { [key: string]: { name: string; data: string; size: number } } = {};
@@ -78,16 +69,11 @@ export async function POST(request: NextRequest) {
 // GET endpoint to check PDF service status
 export async function GET(request: NextRequest) {
   try {
-    const configured = !!(process.env.ADOBE_CLIENT_ID && process.env.ADOBE_CLIENT_SECRET);
-    const isDemo = process.env.ADOBE_CLIENT_ID === 'your_adobe_client_id_here';
-
     return NextResponse.json({
-      configured,
-      isDemo,
-      status: configured && !isDemo ? 'ready' : 'not_configured',
-      message: configured
-        ? (isDemo ? 'Adobe PDF Services in demo mode' : 'Adobe PDF Services ready')
-        : 'Adobe PDF Services not configured'
+      configured: true,
+      status: 'ready',
+      service: 'pdf-lib',
+      message: 'California PDF Form Service ready with pdf-lib'
     });
 
   } catch (error) {
