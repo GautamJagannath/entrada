@@ -15,6 +15,7 @@ function AuthCallbackContent() {
   useEffect(() => {
     const handleCallback = async () => {
       console.log('Auth callback page loaded');
+      console.log('Current auth state:', { hasUser: !!user, isLoading: loading });
 
       // Check for OAuth parameters
       const code = searchParams.get('code');
@@ -55,34 +56,57 @@ function AuthCallbackContent() {
         }
       }
 
-      // Fallback: wait for auth state change
-      const maxWaitTime = 10000; // 10 seconds max
+      // Fallback: wait for auth state change with session checking
+      const maxWaitTime = 15000; // 15 seconds max
       const startTime = Date.now();
+      let checkCount = 0;
 
-      const checkAuth = () => {
-        console.log('Checking auth state:', {
+      const checkAuth = async () => {
+        checkCount++;
+        const timeElapsed = Date.now() - startTime;
+
+        console.log(`Auth check #${checkCount}:`, {
           hasUser: !!user,
           isLoading: loading,
-          timeElapsed: Date.now() - startTime
+          timeElapsed
         });
 
+        // Also check current session directly
+        try {
+          const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+          console.log(`Session check #${checkCount}:`, {
+            hasSession: !!session,
+            userEmail: session?.user?.email,
+            error: sessionError?.message
+          });
+
+          if (session?.user) {
+            console.log('Direct session found, redirecting to dashboard');
+            setProcessing(false);
+            router.replace('/dashboard');
+            return;
+          }
+        } catch (sessionCheckError) {
+          console.error('Error checking session:', sessionCheckError);
+        }
+
         if (user) {
-          console.log('User authenticated via auth state, redirecting to dashboard');
+          console.log('User authenticated via auth context, redirecting to dashboard');
           setProcessing(false);
           router.replace('/dashboard');
-        } else if (Date.now() - startTime > maxWaitTime) {
-          console.log('Auth timeout after', Date.now() - startTime, 'ms, redirecting to login');
+        } else if (timeElapsed > maxWaitTime) {
+          console.log(`Auth timeout after ${timeElapsed}ms (${checkCount} checks), redirecting to login`);
           setProcessing(false);
           router.replace('/login?error=auth_timeout');
         } else {
-          // Check again in 1 second
-          setTimeout(checkAuth, 1000);
+          // Check again in 1.5 seconds
+          setTimeout(checkAuth, 1500);
         }
       };
 
-      // Start checking immediately if no session was established
+      // Start checking after initial delay if no session was established
       if (!user) {
-        setTimeout(checkAuth, 1000); // Start checking after 1 second
+        setTimeout(checkAuth, 2000); // Start checking after 2 seconds
       }
     };
 
