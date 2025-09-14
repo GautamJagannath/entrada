@@ -42,12 +42,23 @@ function LoginPageContent() {
   const handleGoogleLogin = async () => {
     try {
       setIsSigningIn(true);
-      const { error } = await signInWithGoogle();
+      console.log('Starting Google login process...');
+      console.log('Current origin:', window.location.origin);
+
+      const { data, error } = await signInWithGoogle();
+
+      console.log('OAuth response:', { data, error });
+
       if (error) {
         console.error('Login error:', error.message);
         setIsSigningIn(false);
+      } else if (data?.url) {
+        console.log('OAuth URL received:', data.url);
+        // Redirect will happen automatically
+      } else {
+        console.error('No OAuth URL received');
+        setIsSigningIn(false);
       }
-      // Success will be handled by the auth state change listener
     } catch (error) {
       console.error('Login error:', error);
       setIsSigningIn(false);
