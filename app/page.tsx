@@ -10,7 +10,7 @@ export default function Home() {
       <div className="text-center">
         <h1 className="text-3xl font-bold text-gray-900">Welcome to Entrada</h1>
         <p className="mt-2 text-lg text-gray-600">
-          Generate California SIJS guardianship forms quickly and accurately
+          Gautam's new app to Generate California SIJS guardianship forms quickly and accurately
         </p>
       </div>
 

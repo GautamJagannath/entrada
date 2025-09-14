@@ -9,23 +9,38 @@ export interface CreateCaseData {
 
 // Create a new case
 export async function createCase(data: CreateCaseData) {
-  const { data: newCase, error } = await supabase
-    .from('cases')
-    .insert({
-      user_email: data.user_email,
-      form_data: data.initial_data || {},
-      status: 'draft',
-      completion_percentage: 0
-    })
-    .select()
-    .single();
+  try {
+    // Test connection first
+    console.log('Testing Supabase connection...');
 
-  if (error) {
-    console.error('Error creating case:', error);
-    throw new Error('Failed to create case');
+    const { data: newCase, error } = await supabase
+      .from('cases')
+      .insert({
+        user_email: data.user_email,
+        form_data: data.initial_data || {},
+        status: 'draft',
+        completion_percentage: 0
+      })
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Supabase error details:', {
+        message: error.message || 'No message',
+        details: error.details || 'No details',
+        code: error.code || 'No code',
+        hint: error.hint || 'No hint',
+        fullError: JSON.stringify(error, null, 2)
+      });
+      throw new Error(`Database error: ${error.message || 'Unknown error'}`);
+    }
+
+    console.log('Case created successfully:', newCase);
+    return newCase as Case;
+  } catch (err) {
+    console.error('Unexpected error in createCase:', err);
+    throw err;
   }
-
-  return newCase as Case;
 }
 
 // Get all cases for a user
