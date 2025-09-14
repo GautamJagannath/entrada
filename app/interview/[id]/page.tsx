@@ -48,7 +48,7 @@ export default function InterviewPage({ params }: { params: Promise<{ id: string
       if (caseId === 'new') {
         // Create new case
         const newCase = await createCase({
-          user_email: userEmail,
+          user_email: user?.email || '',
           initial_data: {}
         });
         setCaseData(newCase);

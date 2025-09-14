@@ -1,13 +1,13 @@
 "use client";
 
 import { createContext, useContext, useEffect, useState } from 'react';
-import { User, AuthError, AuthResponse } from '@supabase/supabase-js';
+import { User, AuthError, AuthResponse, OAuthResponse } from '@supabase/supabase-js';
 import { supabase } from './supabase';
 
 interface AuthContextType {
   user: User | null;
   loading: boolean;
-  signInWithGoogle: () => Promise<AuthResponse>;
+  signInWithGoogle: () => Promise<OAuthResponse>;
   signOut: () => Promise<{ error: AuthError | null }>;
 }
 
@@ -46,7 +46,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => subscription.unsubscribe();
   }, []);
 
-  const signInWithGoogle = async (): Promise<AuthResponse> => {
+  const signInWithGoogle = async (): Promise<OAuthResponse> => {
     return await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
