@@ -40,44 +40,49 @@ function AuthCallbackContent() {
 
           if (exchangeError) {
             console.error('Code exchange error:', exchangeError);
-            router.replace('/login?error=session_error');
-            return;
-          }
-
-          if (data.session) {
-            console.log('Session established successfully:', data.session.user.email);
+            // Don't return immediately - let the fallback auth check handle it
+            console.log('Manual exchange failed, waiting for automatic session handling...');
+          } else if (data.session) {
+            console.log('Session established successfully via manual exchange:', data.session.user.email);
             setProcessing(false);
             router.replace('/dashboard');
             return;
           }
         } catch (error) {
           console.error('Callback processing error:', error);
-          router.replace('/login?error=callback_error');
-          return;
+          // Don't return immediately - let the fallback auth check handle it
+          console.log('Manual exchange failed with error, waiting for automatic session handling...');
         }
       }
 
       // Fallback: wait for auth state change
-      const maxWaitTime = 5000; // 5 seconds max
+      const maxWaitTime = 10000; // 10 seconds max
       const startTime = Date.now();
 
       const checkAuth = () => {
+        console.log('Checking auth state:', {
+          hasUser: !!user,
+          isLoading: loading,
+          timeElapsed: Date.now() - startTime
+        });
+
         if (user) {
           console.log('User authenticated via auth state, redirecting to dashboard');
           setProcessing(false);
           router.replace('/dashboard');
         } else if (Date.now() - startTime > maxWaitTime) {
-          console.log('Auth timeout, redirecting to login');
+          console.log('Auth timeout after', Date.now() - startTime, 'ms, redirecting to login');
           setProcessing(false);
           router.replace('/login?error=auth_timeout');
-        } else if (!loading) {
-          // Still loading, check again in 500ms
-          setTimeout(checkAuth, 500);
+        } else {
+          // Check again in 1 second
+          setTimeout(checkAuth, 1000);
         }
       };
 
-      if (!user && !loading) {
-        checkAuth();
+      // Start checking immediately if no session was established
+      if (!user) {
+        setTimeout(checkAuth, 1000); // Start checking after 1 second
       }
     };
 
