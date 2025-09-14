@@ -23,11 +23,16 @@ export default function Dashboard() {
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
 
-  // Redirect to login if not authenticated
+  // Redirect to login if not authenticated (with delay to prevent loops)
   useEffect(() => {
     if (!authLoading && !user) {
-      router.push('/login');
-      return;
+      console.log('Dashboard: No user found, redirecting to login after delay');
+      const timer = setTimeout(() => {
+        router.push('/login');
+      }, 1000); // 1 second delay to allow auth to settle
+      return () => clearTimeout(timer);
+    } else if (user) {
+      console.log('Dashboard: User authenticated:', user.email);
     }
   }, [user, authLoading, router]);
 
