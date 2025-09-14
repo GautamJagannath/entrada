@@ -1,11 +1,16 @@
 "use client";
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Button } from '@/components/ui/button';
 
 export default function TestAuth() {
   const [status, setStatus] = useState('');
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const testGoogleAuth = async () => {
     try {
@@ -75,8 +80,8 @@ export default function TestAuth() {
         )}
 
         <div className="text-xs text-gray-500">
-          <p>Current URL: {typeof window !== 'undefined' ? window.location.href : 'Loading...'}</p>
-          <p>Origin: {typeof window !== 'undefined' ? window.location.origin : 'Loading...'}</p>
+          <p>Current URL: {mounted ? window.location.href : 'Loading...'}</p>
+          <p>Origin: {mounted ? window.location.origin : 'Loading...'}</p>
         </div>
       </div>
     </div>
