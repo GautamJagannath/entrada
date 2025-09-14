@@ -1,16 +1,34 @@
 "use client";
 
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useAuth } from '@/lib/auth';
-import { Chrome, Loader2 } from 'lucide-react';
+import { Chrome, Loader2, AlertCircle } from 'lucide-react';
+
+function getErrorMessage(error: string | null): string {
+  switch (error) {
+    case 'auth_failed':
+      return 'Authentication failed. Please try again.';
+    case 'oauth_error':
+      return 'There was an error with Google authentication.';
+    case 'session_error':
+      return 'Failed to establish session. Please try again.';
+    case 'callback_error':
+      return 'Authentication callback failed. Please try again.';
+    case 'auth_timeout':
+      return 'Authentication timed out. Please try again.';
+    default:
+      return 'An unknown error occurred. Please try again.';
+  }
+}
 
 export default function LoginPage() {
   const { signInWithGoogle, user, loading } = useAuth();
   const [isSigningIn, setIsSigningIn] = useState(false);
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   useEffect(() => {
     if (user && !loading) {
@@ -64,6 +82,19 @@ export default function LoginPage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
+          {/* Error Display */}
+          {searchParams.get('error') && (
+            <div className="bg-red-50 border border-red-200 rounded-md p-4 flex items-center gap-3">
+              <AlertCircle className="h-5 w-5 text-red-500 flex-shrink-0" />
+              <div>
+                <h4 className="text-sm font-medium text-red-800">Sign in failed</h4>
+                <p className="text-sm text-red-600">
+                  {getErrorMessage(searchParams.get('error'))}
+                </p>
+              </div>
+            </div>
+          )}
+
           <div className="text-center">
             <p className="text-gray-600 mb-6">
               Sign in with your Google account to get started
