@@ -15,7 +15,7 @@ export function useAutoSave({
   onStatusChange,
   debounceMs = 2000
 }: UseAutoSaveProps) {
-  const timeoutRef = useRef<NodeJS.Timeout>();
+  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
   const lastSavedDataRef = useRef<string>('');
 
   const saveData = useCallback(async (data: Record<string, any>) => {
