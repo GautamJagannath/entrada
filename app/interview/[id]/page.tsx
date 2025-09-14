@@ -13,6 +13,7 @@ import { ArrowLeft, ArrowRight, Save, CheckCircle, Loader2 } from "lucide-react"
 import Link from "next/link";
 import { toast } from "sonner";
 import { useAutoSave } from "@/hooks/useAutoSave";
+import { useAuth } from "@/lib/auth";
 import { getCase, updateCase, createCase } from "@/lib/cases";
 import type { Case } from "@/lib/supabase";
 
@@ -33,7 +34,7 @@ export default function InterviewPage({ params }: { params: Promise<{ id: string
   const [caseData, setCaseData] = useState<Case | null>(null);
 
   const { id: caseId } = use(params);
-  const userEmail = "demo@entrada.app"; // Mock user email
+  const { user } = useAuth();
 
   // Load case data
   useEffect(() => {

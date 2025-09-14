@@ -8,7 +8,9 @@ import { Progress } from "@/components/ui/progress";
 import { Plus, Search, FileText, Clock, Loader2 } from "lucide-react";
 import Link from "next/link";
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { getUserCases, createCase, formatRelativeTime, getStatusConfig, searchCases } from "@/lib/cases";
+import { useAuth } from "@/lib/auth";
 import type { Case } from "@/lib/supabase";
 import { toast } from "sonner";
 
@@ -17,18 +19,30 @@ export default function Dashboard() {
   const [searchTerm, setSearchTerm] = useState("");
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
+  const [generatingPDF, setGeneratingPDF] = useState<string | null>(null);
+  const { user, loading: authLoading } = useAuth();
+  const router = useRouter();
 
-  // Mock user email for demo - in production this would come from authentication
-  const userEmail = "demo@entrada.app";
-
-  // Load cases on component mount
+  // Redirect to login if not authenticated
   useEffect(() => {
-    loadCases();
-  }, []);
+    if (!authLoading && !user) {
+      router.push('/login');
+      return;
+    }
+  }, [user, authLoading, router]);
+
+  // Load cases when user is authenticated
+  useEffect(() => {
+    if (user?.email) {
+      loadCases();
+    }
+  }, [user?.email]);
 
   const loadCases = async () => {
+    if (!user?.email) return;
+
     try {
-      const userCases = await getUserCases(userEmail);
+      const userCases = await getUserCases(user.email);
       setCases(userCases);
     } catch (error) {
       console.error('Failed to load cases:', error);
@@ -39,10 +53,12 @@ export default function Dashboard() {
   };
 
   const handleCreateCase = async () => {
+    if (!user?.email) return;
+
     setCreating(true);
     try {
       const newCase = await createCase({
-        user_email: userEmail,
+        user_email: user.email,
         initial_data: {}
       });
 
@@ -58,7 +74,90 @@ export default function Dashboard() {
     }
   };
 
+  const handleGeneratePDF = async (caseItem: Case) => {
+    setGeneratingPDF(caseItem.id);
+
+    try {
+      toast.loading('Generating PDF forms...', { id: 'pdf-generation' });
+
+      const response = await fetch('/api/generate-pdf', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ caseId: caseItem.id }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || 'PDF generation failed');
+      }
+
+      const result = await response.json();
+
+      toast.success(`Generated ${Object.keys(result.forms).length} PDF forms!`, {
+        id: 'pdf-generation',
+        description: 'Click to download individual forms',
+        action: {
+          label: 'Download',
+          onClick: () => downloadPDFs(result.forms)
+        }
+      });
+
+    } catch (error) {
+      console.error('PDF generation error:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to generate PDFs', {
+        id: 'pdf-generation'
+      });
+    } finally {
+      setGeneratingPDF(null);
+    }
+  };
+
+  const downloadPDFs = (forms: { [key: string]: { name: string; data: string } }) => {
+    Object.entries(forms).forEach(([formType, formData]) => {
+      try {
+        // Convert base64 to blob
+        const binaryString = atob(formData.data);
+        const bytes = new Uint8Array(binaryString.length);
+        for (let i = 0; i < binaryString.length; i++) {
+          bytes[i] = binaryString.charCodeAt(i);
+        }
+
+        const blob = new Blob([bytes], { type: 'application/pdf' });
+        const url = window.URL.createObjectURL(blob);
+
+        // Create download link
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = formData.name;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+
+        // Clean up
+        window.URL.revokeObjectURL(url);
+      } catch (error) {
+        console.error(`Error downloading ${formType}:`, error);
+      }
+    });
+  };
+
   const filteredCases = searchCases(cases, searchTerm);
+
+  // Show loading while authenticating
+  if (authLoading || loading) {
+    return (
+      <div className="flex justify-center items-center min-h-[400px]">
+        <Loader2 className="h-8 w-8 animate-spin" />
+      </div>
+    );
+  }
+
+  // Don't render anything if not authenticated (redirect will happen)
+  if (!user) {
+    return null;
+  }
 
   return (
     <div className="space-y-6">
@@ -162,8 +261,17 @@ export default function Dashboard() {
 
                     <div className="ml-4">
                       {caseItem.status === "ready" || caseItem.completion_percentage === 100 ? (
-                        <Button className="bg-green-600 hover:bg-green-700">
-                          Generate PDFs
+                        <Button
+                          onClick={() => handleGeneratePDF(caseItem)}
+                          disabled={generatingPDF === caseItem.id}
+                          className="bg-green-600 hover:bg-green-700"
+                        >
+                          {generatingPDF === caseItem.id ? (
+                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                          ) : (
+                            <FileText className="h-4 w-4 mr-2" />
+                          )}
+                          {generatingPDF === caseItem.id ? 'Generating...' : 'Generate PDFs'}
                         </Button>
                       ) : (
                         <Link href={`/interview/${caseItem.id}`}>
