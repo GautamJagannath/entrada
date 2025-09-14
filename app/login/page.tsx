@@ -15,7 +15,7 @@ export default function LoginPage() {
   useEffect(() => {
     if (user && !loading) {
       console.log('Login: User authenticated, redirecting to dashboard:', user.email);
-      router.push('/dashboard');
+      router.replace('/dashboard');
     } else if (!loading) {
       console.log('Login: No user, showing login form');
     }
