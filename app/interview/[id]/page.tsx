@@ -9,7 +9,7 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, ArrowRight, Save, CheckCircle, Loader2, FileText } from "lucide-react";
+import { ArrowLeft, ArrowRight, Save, CheckCircle, Loader2, FileText, Mail } from "lucide-react";
 import Link from "next/link";
 import { toast } from "sonner";
 import { useAutoSave } from "@/hooks/useAutoSave";
@@ -33,6 +33,7 @@ export default function InterviewPage({ params }: { params: Promise<{ id: string
   const [loading, setLoading] = useState(true);
   const [caseData, setCaseData] = useState<Case | null>(null);
   const [generatingPDF, setGeneratingPDF] = useState(false);
+  const [sendingEmail, setSendingEmail] = useState(false);
 
   const { id: caseId } = use(params);
   const { user } = useAuth();
@@ -88,20 +89,41 @@ export default function InterviewPage({ params }: { params: Promise<{ id: string
   const calculateProgress = () => {
     if (!formData) return 0;
 
-    // Count required fields that are filled
-    const requiredFields = [
-      'minor_full_name', 'minor_date_of_birth', 'minor_current_address',
-      'guardian_full_name', 'guardian_relationship', 'guardian_address',
-      'mother_full_name', 'mother_living_status',
-      'father_full_name', 'father_living_status',
-      'filing_county'
+    // All form fields from the complete interview
+    const allFields = [
+      // Minor Information
+      'minor_name', 'minor_dob', 'minor_gender', 'is_citizen', 'a_number', 'immigration_status',
+      'country_of_birth', 'has_siblings', 'sibling_1_name',
+
+      // Guardian Information
+      'guardian_name', 'guardian_relationship', 'guardian_age', 'guardian_address',
+      'guardian_city', 'guardian_state', 'guardian_zip', 'guardian_phone', 'guardian_email',
+      'guardian_known_duration', 'guardian_occupation', 'guardian_employer',
+
+      // Mother Information
+      'mother_name', 'mother_living', 'mother_death_date', 'mother_death_place',
+      'mother_last_address', 'mother_agrees', 'mother_reunification', 'mother_reunification_explanation',
+      'mother_last_contact',
+
+      // Father Information
+      'father_name', 'father_living', 'father_death_date', 'father_death_place',
+      'father_last_address', 'father_agrees', 'father_reunification', 'father_reunification_explanation',
+      'father_last_contact', 'parents_married',
+
+      // SIJS Factors
+      'sijs_best_interest', 'best_interest_explanation', 'return_harmful', 'return_harmful_explanation',
+      'juvenile_court_dependent', 'minor_trauma', 'trauma_description', 'minor_counseling', 'family_ties_us',
+
+      // Court Information
+      'filing_county', 'courthouse_address', 'emergency_filing', 'emergency_reason',
+      'interpreter_needed', 'interpreter_language', 'additional_info'
     ];
 
-    const filledFields = requiredFields.filter(field =>
+    const filledFields = allFields.filter(field =>
       formData[field] && formData[field].toString().trim() !== ''
     ).length;
 
-    return Math.round((filledFields / requiredFields.length) * 100);
+    return Math.round((filledFields / allFields.length) * 100);
   };
 
   const handleNext = () => {
@@ -194,6 +216,45 @@ export default function InterviewPage({ params }: { params: Promise<{ id: string
         console.error(`Error downloading ${formType}:`, error);
       }
     });
+  };
+
+  const handleEmailForms = async () => {
+    if (!caseData || !user?.email) return;
+
+    setSendingEmail(true);
+    try {
+      toast.loading('Sending forms via email...', { id: 'email-send' });
+
+      const response = await fetch('/api/send-forms', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          caseId: caseData.id,
+          recipientEmail: user.email
+        }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.message || 'Email sending failed');
+      }
+
+      toast.success(`Forms sent successfully to ${user.email}!`, {
+        id: 'email-send',
+        description: `${result.formsCount} PDF forms delivered`,
+      });
+
+    } catch (error) {
+      console.error('Send email error:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to send forms via email', {
+        id: 'email-send'
+      });
+    } finally {
+      setSendingEmail(false);
+    }
   };
 
   if (loading) {
@@ -1347,18 +1408,33 @@ export default function InterviewPage({ params }: { params: Promise<{ id: string
         </Button>
 
         {currentSection === sections.length - 1 ? (
-          <Button
-            onClick={handleGeneratePDF}
-            disabled={generatingPDF}
-            className="bg-green-600 hover:bg-green-700"
-          >
-            {generatingPDF ? (
-              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-            ) : (
-              <FileText className="h-4 w-4 mr-2" />
-            )}
-            {generatingPDF ? 'Generating...' : 'Generate PDFs'}
-          </Button>
+          <div className="flex gap-2">
+            <Button
+              onClick={handleGeneratePDF}
+              disabled={generatingPDF}
+              className="bg-green-600 hover:bg-green-700"
+            >
+              {generatingPDF ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <FileText className="h-4 w-4 mr-2" />
+              )}
+              {generatingPDF ? 'Generating...' : 'Generate PDFs'}
+            </Button>
+
+            <Button
+              onClick={handleEmailForms}
+              disabled={sendingEmail || !user?.email}
+              className="bg-blue-600 hover:bg-blue-700"
+            >
+              {sendingEmail ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <Mail className="h-4 w-4 mr-2" />
+              )}
+              {sendingEmail ? 'Sending...' : 'Email Forms'}
+            </Button>
+          </div>
         ) : (
           <Button onClick={handleNext}>
             Next
