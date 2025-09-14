@@ -4,8 +4,6 @@ import "./globals.css";
 import { Toaster } from "@/components/ui/sonner";
 import Link from "next/link";
 import { AuthProvider } from "@/lib/auth";
-import { HeaderAuth } from "@/components/HeaderAuth";
-
 const inter = Inter({
   subsets: ["latin"],
   variable: "--font-sans",
@@ -33,7 +31,9 @@ export default function RootLayout({
                   <Link href="/" className="text-xl font-semibold text-blue-600 hover:text-blue-700 transition-colors">
                     Entrada
                   </Link>
-                  <HeaderAuth />
+                  <div className="text-sm text-gray-600">
+                    Demo User
+                  </div>
                 </div>
               </div>
             </header>

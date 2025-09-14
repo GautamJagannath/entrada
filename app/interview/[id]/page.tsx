@@ -9,7 +9,7 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, ArrowRight, Save, CheckCircle, Loader2 } from "lucide-react";
+import { ArrowLeft, ArrowRight, Save, CheckCircle, Loader2, FileText } from "lucide-react";
 import Link from "next/link";
 import { toast } from "sonner";
 import { useAutoSave } from "@/hooks/useAutoSave";
@@ -23,7 +23,7 @@ const sections = [
   { id: 'parent1', title: 'Parent 1', fields: 20, color: 'bg-purple-500' },
   { id: 'parent2', title: 'Parent 2', fields: 20, color: 'bg-orange-500' },
   { id: 'sijs', title: 'SIJS Factors', fields: 10, color: 'bg-red-500' },
-  { id: 'court', title: 'Court Info', fields: 5, color: 'bg-gray-500' }
+  { id: 'court', title: 'Court Info', fields: 5, color: 'bg-indigo-500' }
 ];
 
 export default function InterviewPage({ params }: { params: Promise<{ id: string }> }) {
@@ -32,6 +32,7 @@ export default function InterviewPage({ params }: { params: Promise<{ id: string
   const [saveStatus, setSaveStatus] = useState<'saving' | 'saved' | 'error'>('saved');
   const [loading, setLoading] = useState(true);
   const [caseData, setCaseData] = useState<Case | null>(null);
+  const [generatingPDF, setGeneratingPDF] = useState(false);
 
   const { id: caseId } = use(params);
   const { user } = useAuth();
@@ -85,8 +86,22 @@ export default function InterviewPage({ params }: { params: Promise<{ id: string
   };
 
   const calculateProgress = () => {
-    if (!caseData) return 0;
-    return caseData.completion_percentage;
+    if (!formData) return 0;
+
+    // Count required fields that are filled
+    const requiredFields = [
+      'minor_full_name', 'minor_date_of_birth', 'minor_current_address',
+      'guardian_full_name', 'guardian_relationship', 'guardian_address',
+      'mother_full_name', 'mother_living_status',
+      'father_full_name', 'father_living_status',
+      'filing_county'
+    ];
+
+    const filledFields = requiredFields.filter(field =>
+      formData[field] && formData[field].toString().trim() !== ''
+    ).length;
+
+    return Math.round((filledFields / requiredFields.length) * 100);
   };
 
   const handleNext = () => {
@@ -110,6 +125,75 @@ export default function InterviewPage({ params }: { params: Promise<{ id: string
       console.error('Save failed:', error);
       toast.error('Failed to save progress');
     }
+  };
+
+  const handleGeneratePDF = async () => {
+    setGeneratingPDF(true);
+
+    try {
+      toast.loading('Generating PDF forms...', { id: 'pdf-generation' });
+
+      const response = await fetch('/api/generate-pdf', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ caseId: caseId }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || 'PDF generation failed');
+      }
+
+      const result = await response.json();
+
+      toast.success(`Generated ${Object.keys(result.forms).length} PDF forms!`, {
+        id: 'pdf-generation',
+        description: 'Click to download individual forms',
+        action: {
+          label: 'Download',
+          onClick: () => downloadPDFs(result.forms)
+        }
+      });
+
+    } catch (error) {
+      console.error('PDF generation error:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to generate PDFs', {
+        id: 'pdf-generation'
+      });
+    } finally {
+      setGeneratingPDF(false);
+    }
+  };
+
+  const downloadPDFs = (forms: { [key: string]: { name: string; data: string } }) => {
+    Object.entries(forms).forEach(([formType, formData]) => {
+      try {
+        // Convert base64 to blob
+        const binaryString = atob(formData.data);
+        const bytes = new Uint8Array(binaryString.length);
+        for (let i = 0; i < binaryString.length; i++) {
+          bytes[i] = binaryString.charCodeAt(i);
+        }
+
+        const blob = new Blob([bytes], { type: 'application/pdf' });
+        const url = window.URL.createObjectURL(blob);
+
+        // Create download link
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = formData.name;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+
+        // Clean up
+        window.URL.revokeObjectURL(url);
+      } catch (error) {
+        console.error(`Error downloading ${formType}:`, error);
+      }
+    });
   };
 
   if (loading) {
@@ -188,7 +272,7 @@ export default function InterviewPage({ params }: { params: Promise<{ id: string
       <div className="space-y-3">
         <div className="flex justify-between items-center">
           <h1 className="text-2xl font-bold">
-            {params.id === 'new' ? 'New' : 'Edit'} Guardianship Case
+            {caseId === 'new' ? 'New' : 'Edit'} Guardianship Case
           </h1>
           <Badge variant="outline">{Math.round(calculateProgress())}% Complete</Badge>
         </div>
@@ -200,8 +284,11 @@ export default function InterviewPage({ params }: { params: Promise<{ id: string
               key={section.id}
               variant={index === currentSection ? "default" : "outline"}
               size="sm"
-              onClick={() => setCurrentSection(index)}
-              className={`whitespace-nowrap ${index === currentSection ? currentSectionData.color : ''}`}
+              onClick={() => {
+                console.log(`Clicked section ${index}: ${section.title}`);
+                setCurrentSection(index);
+              }}
+              className={`whitespace-nowrap ${index === currentSection ? currentSectionData.color : ''} ${index === 5 ? 'border-2 border-red-500 z-10' : ''}`}
             >
               {section.title}
             </Button>
@@ -1259,13 +1346,25 @@ export default function InterviewPage({ params }: { params: Promise<{ id: string
           Save & Exit
         </Button>
 
-        <Button
-          onClick={handleNext}
-          disabled={currentSection === sections.length - 1}
-        >
-          Next
-          <ArrowRight className="h-4 w-4 ml-2" />
-        </Button>
+        {currentSection === sections.length - 1 ? (
+          <Button
+            onClick={handleGeneratePDF}
+            disabled={generatingPDF}
+            className="bg-green-600 hover:bg-green-700"
+          >
+            {generatingPDF ? (
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            ) : (
+              <FileText className="h-4 w-4 mr-2" />
+            )}
+            {generatingPDF ? 'Generating...' : 'Generate PDFs'}
+          </Button>
+        ) : (
+          <Button onClick={handleNext}>
+            Next
+            <ArrowRight className="h-4 w-4 ml-2" />
+          </Button>
+        )}
       </div>
     </div>
   );
