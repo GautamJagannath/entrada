@@ -3,11 +3,13 @@ import { createClient } from '@supabase/supabase-js'
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 
-// Debug logging with partial key for security
-console.log('Supabase URL:', supabaseUrl ? 'Set' : 'Missing');
-console.log('Supabase Key:', supabaseAnonKey ? 'Set' : 'Missing');
-console.log('Supabase URL value:', supabaseUrl);
-console.log('Supabase Key (first 20 chars):', supabaseAnonKey ? supabaseAnonKey.substring(0, 20) + '...' : 'Missing');
+// Verify environment variables are loaded
+if (typeof window === 'undefined') {
+  console.log('Supabase configuration loaded:', {
+    urlSet: !!supabaseUrl,
+    keySet: !!supabaseAnonKey
+  });
+}
 
 if (!supabaseUrl || !supabaseAnonKey) {
   throw new Error('Missing Supabase environment variables');
@@ -19,8 +21,7 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     autoRefreshToken: true,
     persistSession: true,
     detectSessionInUrl: true,
-    flowType: 'implicit',
-    debug: true
+    flowType: 'implicit'
   },
   global: {
     headers: {
