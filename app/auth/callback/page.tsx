@@ -17,14 +17,23 @@ function AuthCallbackContent() {
       console.log('Auth callback page loaded');
       console.log('Current auth state:', { hasUser: !!user, isLoading: loading });
 
-      // Check for OAuth parameters
+      // Check for OAuth parameters in both query and fragment
       const code = searchParams.get('code');
       const error = searchParams.get('error');
 
+      // Also check URL fragment for tokens (OAuth implicit flow)
+      const fragment = window.location.hash.substring(1);
+      const fragmentParams = new URLSearchParams(fragment);
+      const accessToken = fragmentParams.get('access_token');
+      const refreshToken = fragmentParams.get('refresh_token');
+
       console.log('Callback params:', {
         hasCode: !!code,
+        hasAccessToken: !!accessToken,
+        hasRefreshToken: !!refreshToken,
         error,
-        fullUrl: window.location.href
+        fullUrl: window.location.href,
+        fragment: fragment
       });
 
       if (error) {
@@ -33,15 +42,14 @@ function AuthCallbackContent() {
         return;
       }
 
+      // Handle OAuth code flow
       if (code) {
         try {
-          // Try to exchange the code for a session
           console.log('Exchanging code for session...');
           const { data, error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
 
           if (exchangeError) {
             console.error('Code exchange error:', exchangeError);
-            // Don't return immediately - let the fallback auth check handle it
             console.log('Manual exchange failed, waiting for automatic session handling...');
           } else if (data.session) {
             console.log('Session established successfully via manual exchange:', data.session.user.email);
@@ -51,8 +59,33 @@ function AuthCallbackContent() {
           }
         } catch (error) {
           console.error('Callback processing error:', error);
-          // Don't return immediately - let the fallback auth check handle it
           console.log('Manual exchange failed with error, waiting for automatic session handling...');
+        }
+      }
+
+      // Handle OAuth implicit flow (tokens in fragment)
+      if (accessToken) {
+        try {
+          console.log('Setting session from fragment tokens...');
+
+          // Use setSession to manually establish the session
+          const { data, error: sessionError } = await supabase.auth.setSession({
+            access_token: accessToken,
+            refresh_token: refreshToken || ''
+          });
+
+          if (sessionError) {
+            console.error('Session set error:', sessionError);
+            console.log('Manual session set failed, waiting for automatic handling...');
+          } else if (data.session) {
+            console.log('Session established successfully via fragment tokens:', data.session.user.email);
+            setProcessing(false);
+            router.replace('/dashboard');
+            return;
+          }
+        } catch (error) {
+          console.error('Fragment token processing error:', error);
+          console.log('Manual fragment processing failed, waiting for automatic handling...');
         }
       }
 
