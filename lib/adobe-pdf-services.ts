@@ -1,6 +1,6 @@
 import { PDFDocument, PDFForm, StandardFonts, rgb } from 'pdf-lib';
 import * as fs from 'fs';
-import { serverlessPDFGenerator } from './serverless-pdf-generator';
+import { vercelPDFGenerator } from './vercel-pdf-generator';
 
 export interface PDFFormData {
   [fieldName: string]: string | number | boolean;
@@ -410,42 +410,46 @@ class CaliforniaPDFFormService {
     };
 
     try {
-      console.log(`🎨 Generating PDFs using Serverless PDFKit method...`);
+      console.log(`🎨 Generating PDFs using Vercel-compatible pdf-lib method...`);
 
       // Generate GC-210
       try {
         console.log('Generating GC-210 (Petition for Appointment of Guardian)...');
-        forms['GC-210'] = await serverlessPDFGenerator.generateGC210(htmlData);
+        forms['GC-210'] = await vercelPDFGenerator.generateGC210(htmlData);
         console.log('✓ GC-210 generated successfully');
       } catch (error) {
         console.error('❌ Failed to generate GC-210:', error);
+        console.error(error); // Log full error
       }
 
       // Generate GC-220
       try {
         console.log('Generating GC-220 (SIJS Petition)...');
-        forms['GC-220'] = await serverlessPDFGenerator.generateGC220(htmlData);
+        forms['GC-220'] = await vercelPDFGenerator.generateGC220(htmlData);
         console.log('✓ GC-220 generated successfully');
       } catch (error) {
         console.error('❌ Failed to generate GC-220:', error);
+        console.error(error); // Log full error
       }
 
       // Generate FL-105
       try {
         console.log('Generating FL-105 (UCCJEA Declaration)...');
-        forms['FL-105'] = await serverlessPDFGenerator.generateFL105(htmlData);
+        forms['FL-105'] = await vercelPDFGenerator.generateFL105(htmlData);
         console.log('✓ FL-105 generated successfully');
       } catch (error) {
         console.error('❌ Failed to generate FL-105:', error);
+        console.error(error); // Log full error
       }
 
       // Generate GC-020
       try {
         console.log('Generating GC-020 (Notice of Hearing)...');
-        forms['GC-020'] = await serverlessPDFGenerator.generateGC020(htmlData);
+        forms['GC-020'] = await vercelPDFGenerator.generateGC020(htmlData);
         console.log('✓ GC-020 generated successfully');
       } catch (error) {
         console.error('❌ Failed to generate GC-020:', error);
+        console.error(error); // Log full error
       }
 
       console.log(`✅ Generated ${Object.keys(forms).length} PDFs successfully`);
