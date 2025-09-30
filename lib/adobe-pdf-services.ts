@@ -1,5 +1,6 @@
 import { PDFDocument, PDFForm, StandardFonts, rgb } from 'pdf-lib';
 import * as fs from 'fs';
+import { htmlPDFGenerator } from './html-pdf-generator';
 
 export interface PDFFormData {
   [fieldName: string]: string | number | boolean;
@@ -12,16 +13,19 @@ export interface GeneratePDFOptions {
 }
 
 class CaliforniaPDFFormService {
+  private useHTMLGeneration: boolean = true; // Use HTML-to-PDF instead of form filling
+
   constructor() {
-    console.log('California PDF Form Service initialized with pdf-lib');
+    console.log('California PDF Form Service initialized');
+    console.log('PDF Generation method: HTML-to-PDF (Puppeteer)');
   }
 
   /**
-   * Fill a PDF form using text overlay technique for static California forms
+   * Fill a PDF form using AcroForm fields (proper method) with fallback to text overlay
    */
   async fillPDFForm(options: GeneratePDFOptions): Promise<Buffer> {
     try {
-      console.log(`Starting PDF overlay filling for template: ${options.templatePath}`);
+      console.log(`Starting PDF form filling for template: ${options.templatePath}`);
 
       // Check if template file exists
       if (!fs.existsSync(options.templatePath)) {
@@ -33,53 +37,121 @@ class CaliforniaPDFFormService {
 
       // Load the PDF document - ignore encryption for California court forms
       const pdfDoc = await PDFDocument.load(existingPdfBytes, {
-        ignoreEncryption: true
+        ignoreEncryption: true,
+        updateMetadata: false
       });
-
-      // Get font for text overlays
-      const helveticaFont = await pdfDoc.embedFont(StandardFonts.Helvetica);
-      const boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
 
       console.log(`PDF loaded with ${pdfDoc.getPageCount()} pages`);
 
-      // Get field positions for this form type
-      const fieldPositions = this.getFieldPositions(options.templatePath);
+      // Try to get the form
+      let form: PDFForm | null = null;
+      let formFieldsCount = 0;
 
-      // Add text overlays to appropriate pages
-      let fieldsFilledCount = 0;
-      for (const [fieldName, fieldValue] of Object.entries(options.formData)) {
-        if (!fieldValue || fieldValue.toString().trim() === '') continue;
-
-        const position = fieldPositions[fieldName];
-        if (position) {
-          const page = pdfDoc.getPages()[position.page - 1]; // Convert to 0-based index
-
-          if (page) {
-            // Add text overlay
-            page.drawText(fieldValue.toString(), {
-              x: position.x,
-              y: position.y,
-              size: position.size || 10,
-              font: position.bold ? boldFont : helveticaFont,
-              color: rgb(0, 0, 0) // Black text
-            });
-
-            fieldsFilledCount++;
-            console.log(`Added overlay: ${fieldName} = ${fieldValue} at (${position.x}, ${position.y})`);
-          }
-        }
+      try {
+        form = pdfDoc.getForm();
+        const fields = form.getFields();
+        formFieldsCount = fields.length;
+        console.log(`✓ PDF has ${formFieldsCount} form fields`);
+      } catch (error) {
+        console.warn('⚠ Could not access PDF form fields:', error);
       }
 
-      console.log(`Successfully added ${fieldsFilledCount} text overlays out of ${Object.keys(options.formData).length} data fields`);
+      let fieldsFilledCount = 0;
+      let fieldsFilledByOverlay = 0;
 
-      // Generate the filled PDF
-      const pdfBytes = await pdfDoc.save();
+      // Method 1: Try to fill actual form fields (proper approach)
+      if (form && formFieldsCount > 0) {
+        console.log('Attempting to fill AcroForm fields...');
 
-      console.log('PDF overlay filling completed successfully');
+        for (const [fieldName, fieldValue] of Object.entries(options.formData)) {
+          if (!fieldValue || fieldValue.toString().trim() === '') continue;
+
+          try {
+            // Try to get the field
+            const field = form.getField(fieldName);
+            const fieldType = field.constructor.name;
+
+            // Fill based on field type
+            if (fieldType === 'PDFTextField') {
+              const textField = form.getTextField(fieldName);
+              textField.setText(fieldValue.toString());
+              textField.enableReadOnly(); // Lock field after filling
+              fieldsFilledCount++;
+              console.log(`✓ Filled text field: ${fieldName}`);
+            } else if (fieldType === 'PDFCheckBox') {
+              const checkbox = form.getCheckBox(fieldName);
+              if (fieldValue === true || fieldValue === 'Yes' || fieldValue === 'yes' || fieldValue === '1') {
+                checkbox.check();
+              } else {
+                checkbox.uncheck();
+              }
+              checkbox.enableReadOnly();
+              fieldsFilledCount++;
+              console.log(`✓ Filled checkbox: ${fieldName}`);
+            } else if (fieldType === 'PDFRadioGroup') {
+              const radioGroup = form.getRadioGroup(fieldName);
+              radioGroup.select(fieldValue.toString());
+              radioGroup.enableReadOnly();
+              fieldsFilledCount++;
+              console.log(`✓ Filled radio: ${fieldName}`);
+            } else if (fieldType === 'PDFDropdown') {
+              const dropdown = form.getDropdown(fieldName);
+              dropdown.select(fieldValue.toString());
+              dropdown.enableReadOnly();
+              fieldsFilledCount++;
+              console.log(`✓ Filled dropdown: ${fieldName}`);
+            }
+          } catch (error) {
+            // Field not found or can't be filled - this is expected for unmapped fields
+            // console.debug(`Field ${fieldName} not found or can't be filled`);
+          }
+        }
+
+        console.log(`✓ Successfully filled ${fieldsFilledCount} AcroForm fields`);
+      }
+
+      // Method 2: Fallback to text overlay for unmapped fields or if no form fields exist
+      if (formFieldsCount === 0 || fieldsFilledCount === 0) {
+        console.log('Falling back to text overlay method...');
+
+        const helveticaFont = await pdfDoc.embedFont(StandardFonts.Helvetica);
+        const boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+        const fieldPositions = this.getFieldPositions(options.templatePath);
+
+        for (const [fieldName, fieldValue] of Object.entries(options.formData)) {
+          if (!fieldValue || fieldValue.toString().trim() === '') continue;
+
+          const position = fieldPositions[fieldName];
+          if (position) {
+            const page = pdfDoc.getPages()[position.page - 1];
+
+            if (page) {
+              page.drawText(fieldValue.toString(), {
+                x: position.x,
+                y: position.y,
+                size: position.size || 10,
+                font: position.bold ? boldFont : helveticaFont,
+                color: rgb(0, 0, 0)
+              });
+
+              fieldsFilledByOverlay++;
+            }
+          }
+        }
+
+        console.log(`✓ Added ${fieldsFilledByOverlay} text overlays`);
+      }
+
+      // Save the filled PDF
+      const pdfBytes = await pdfDoc.save({
+        useObjectStreams: false // Better compatibility
+      });
+
+      console.log(`✅ PDF filling completed: ${fieldsFilledCount} fields + ${fieldsFilledByOverlay} overlays`);
       return Buffer.from(pdfBytes);
 
     } catch (error) {
-      console.error('PDF overlay filling error:', error);
+      console.error('❌ PDF filling error:', error);
       console.log(`Falling back to placeholder PDF for ${options.templatePath}`);
 
       // Fall back to placeholder PDF generation
@@ -156,6 +228,8 @@ class CaliforniaPDFFormService {
   /**
    * Map case data to proper form field names for California guardianship forms
    * Based on analysis of 954 fields across all PDF templates
+   *
+   * Field names from public/templates/pdf_field_analysis_summary.md
    */
   private mapCaseDataToFormFields(caseData: any, formType: string): PDFFormData {
     const formData = caseData.form_data || {};
@@ -164,83 +238,150 @@ class CaliforniaPDFFormService {
     switch (formType) {
       case 'GC-210':
         return {
-          // Court Information - Standard header fields
+          // === COURT INFORMATION (Standard Header) ===
           'topmostSubform[0].Page1[0].StdP1Header_sf[0].CourtInfo[0].CrtCounty_ft[0]': formData.filing_county || '',
+          'CrtCounty_ft[0]': formData.filing_county || '',
+          'topmostSubform[0].Page1[0].StdP1Header_sf[0].CourtInfo[0].Street_ft[0]': formData.court_address || '',
+          'topmostSubform[0].Page1[0].StdP1Header_sf[0].CourtInfo[0].CityZip_ft[0]': formData.court_city_zip || '',
+          'topmostSubform[0].Page1[0].StdP1Header_sf[0].CourtInfo[0].Branch_ft[0]': formData.court_branch || '',
+          'Branch_ft[0]': formData.court_branch || '',
+
+          // === CASE NUMBER (appears on multiple pages) ===
+          'topmostSubform[0].Page1[0].StdP1Header_sf[0].CaseNumber[0].CaseNumber_ft[0]': caseData.id || '',
+          'topmostSubform[0].Page2[0].CaptionPx_sf[0].CaseNumber[0].CaseNumber_ft[0]': caseData.id || '',
+          'topmostSubform[0].Page3[0].CaptionPx_sf[0].CaseNumber[0].CaseNumber_ft[0]': caseData.id || '',
           'CaseNumber_ft[0]': caseData.id || '',
 
-          // Common form fields - these are the generic FillText fields
-          'FillText5[0]': formData.guardian_full_name || '', // Petitioner name
-          'FillText6[0]': formData.minor_full_name || '', // Minor's name
-          'FillText9[0]': formData.minor_date_of_birth || '', // Minor's DOB
-          'FillText10[0]': formData.minor_current_address || '', // Minor's address
-          'FillText11[0]': formData.guardian_relationship || '', // Relationship to minor
+          // === ATTORNEY INFORMATION ===
+          'AttyName_ft[0]': formData.attorney_name || '',
+          'AttyBarNo_dc[0]': formData.attorney_bar_number || '',
+          'AttyFirm_ft[0]': formData.attorney_firm || '',
+          'AttyStreet_ft[0]': formData.attorney_address || '',
+          'AttyCity_ft[0]': formData.attorney_city || '',
+          'AttyState_ft[0]': formData.attorney_state || '',
+          'AttyZip_ft[0]': formData.attorney_zip || '',
+          'Email_ft[0]': formData.attorney_email || '',
+          'Fax_ft[0]': formData.attorney_fax || '',
+          'AttyFor_ft[0]': formData.guardian_name || '', // Attorney for (petitioner)
 
-          // Parent information
-          'FillText3[0]': formData.mother_full_name || '',
-          'FillTxt6[0]': formData.father_full_name || '',
-
-          // Guardian address
+          // === PETITIONER/GUARDIAN INFORMATION ===
+          'FillText5[0]': formData.guardian_name || '', // Petitioner name
           'FillText10001[0]': formData.guardian_address || '',
+          'FillText11[0]': formData.guardian_relationship || '',
+
+          // === MINOR INFORMATION ===
+          'FillText6[0]': formData.minor_name || formData.minor_full_name || '',
+          'FillText9[0]': formData.minor_dob || formData.minor_date_of_birth || '',
+          'FillText10[0]': formData.minor_address || formData.minor_current_address || '',
+
+          // === PARENT INFORMATION ===
+          'FillText3[0]': formData.mother_name || formData.mother_full_name || '',
+          'FillTxt6[0]': formData.father_name || formData.father_full_name || '',
+
+          // === CHECKBOXES (Guardian type, relationships, etc) ===
+          'topmostSubform[0].Page1[0].CheckBox1[0]': formData.guardian_type === 'person' ? '1' : '0',
+          'topmostSubform[0].Page1[0].CheckBox2[0]': formData.guardian_type === 'nonprofit' ? '1' : '0',
+          'topmostSubform[0].Page1[0].CheckBox3[0]': formData.is_relative ? '1' : '0',
         };
 
       case 'GC-220':
         return {
-          // Court Information
+          // === COURT INFORMATION ===
           'topmostSubform[0].Page1[0].StdP1Header_sf[0].CourtInfo[0].CrtCounty_ft[0]': formData.filing_county || '',
+          'CrtCounty_ft[0]': formData.filing_county || '',
+
+          // === CASE NUMBER ===
+          'topmostSubform[0].Page1[0].StdP1Header_sf[0].CaseNumber[0].CaseNumber_ft[0]': caseData.id || '',
           'CaseNumber_ft[0]': caseData.id || '',
 
-          // SIJS specific fields
-          'FillText5[0]': formData.minor_full_name || '',
-          'FillText6[0]': formData.sijs_abuse_neglect_abandonment ? 'Yes' : 'No',
-          'FillText9[0]': formData.sijs_not_in_best_interest ? 'Yes' : 'No',
-          'FillText10[0]': formData.mother_reunification || '',
-          'FillText11[0]': formData.father_reunification || '',
+          // === ATTORNEY INFORMATION (same as GC-210) ===
+          'AttyName_ft[0]': formData.attorney_name || '',
+          'AttyBarNo_dc[0]': formData.attorney_bar_number || '',
+          'Email_ft[0]': formData.attorney_email || '',
+
+          // === MINOR INFORMATION ===
+          'FillText5[0]': formData.minor_name || formData.minor_full_name || '',
+          'FillText9[0]': formData.minor_dob || formData.minor_date_of_birth || '',
+
+          // === SIJS SPECIFIC FIELDS ===
+          'FillText6[0]': formData.sijs_best_interest ? 'Yes' : 'No',
+          'FillText7[0]': formData.sijs_return_harmful ? 'Yes' : 'No',
+          'FillText10[0]': formData.best_interest_explanation || '',
+          'FillText11[0]': formData.return_harmful_explanation || '',
+
+          // Parent reunification status
+          'FillText12[0]': formData.mother_reunification || '',
+          'FillText13[0]': formData.father_reunification || '',
+
+          // === CHECKBOXES (SIJS findings) ===
+          'topmostSubform[0].Page1[0].CheckBox1[0]': formData.sijs_abuse ? '1' : '0',
+          'topmostSubform[0].Page1[0].CheckBox2[0]': formData.sijs_neglect ? '1' : '0',
+          'topmostSubform[0].Page1[0].CheckBox3[0]': formData.sijs_abandonment ? '1' : '0',
         };
 
       case 'FL-105':
         return {
-          // Court Information - FL-105 has different naming pattern
+          // FL-105 has different field naming (shorter paths)
+
+          // === COURT INFORMATION ===
           'CrtCounty[0]': formData.filing_county || '',
+          'CrtStreet[0]': formData.court_address || '',
+          'CrtCityZip[0]': formData.court_city_zip || '',
+
+          // === CASE NUMBER ===
           'CaseNumber[0]': caseData.id || '',
 
-          // Attorney information
+          // === ATTORNEY INFORMATION ===
           'BarNo_ft[0]': formData.attorney_bar_number || '',
           'AttyName_ft[0]': formData.attorney_name || '',
           'Phone[0]': formData.attorney_phone || '',
           'Email[0]': formData.attorney_email || '',
+          'Fax[0]': formData.attorney_fax || '',
 
-          // Child information
-          'Name[0]': formData.minor_full_name || '',
-          'CrtStreet[0]': formData.minor_current_address || '',
-          'CrtMailingAdd[0]': formData.minor_previous_addresses || 'None',
+          // === CHILD INFORMATION ===
+          'Name[0]': formData.minor_name || formData.minor_full_name || '',
+          'DOB[0]': formData.minor_dob || formData.minor_date_of_birth || '',
+          'CrtMailingAdd[0]': formData.minor_address || formData.minor_current_address || '',
+
+          // === UCCJEA DECLARATIONS ===
+          'FillText5[0]': formData.minor_lived_in_california_since || '',
+          'FillText6[0]': formData.previous_custody_cases || 'None',
         };
 
       case 'GC-020':
         return {
-          // Notice of Hearing
+          // === COURT INFORMATION ===
           'topmostSubform[0].Page1[0].StdP1Header_sf[0].CourtInfo[0].CrtCounty_ft[0]': formData.filing_county || '',
+          'CrtCounty_ft[0]': formData.filing_county || '',
+
+          // === CASE NUMBER ===
           'CaseNumber_ft[0]': caseData.id || '',
 
-          // Basic info
-          'FillText5[0]': formData.minor_full_name || '',
-          'FillText6[0]': formData.guardian_full_name || '',
+          // === PARTIES ===
+          'FillText5[0]': formData.minor_name || formData.minor_full_name || '',
+          'FillText6[0]': formData.guardian_name || '',
 
-          // Court will fill these
+          // === HEARING INFORMATION (typically left blank for court to fill) ===
           'FillText9[0]': '', // Hearing date
           'FillText10[0]': '', // Hearing time
+          'Dept_ft[0]': '', // Department
         };
 
       case 'GC-210P':
         return {
-          // Child Information Attachment
+          // === COURT INFORMATION ===
           'topmostSubform[0].Page1[0].Stamp_court_case[0].CourtInfo_ft[0]': formData.filing_county || '',
           'topmostSubform[0].Page1[0].Stamp_court_case[0].CaseNumber_ft[0]': caseData.id || '',
 
-          // Child specific fields
-          'AllChildNames[0]': formData.minor_full_name || '',
-          'FillText72[0]': formData.minor_date_of_birth || '',
-          'FillText71[0]': formData.minor_current_address || '',
+          // === CHILD INFORMATION ===
+          'AllChildNames[0]': formData.minor_name || formData.minor_full_name || '',
+          'FillText72[0]': formData.minor_dob || formData.minor_date_of_birth || '',
+          'FillText71[0]': formData.minor_address || formData.minor_current_address || '',
           'FillText70[0]': formData.guardian_relationship || '',
+
+          // === GUARDIAN RELATIONSHIP DETAILS ===
+          'FillText69[0]': formData.guardian_known_duration || '',
+          'FillText68[0]': formData.guardian_relationship_quality || '',
         };
 
       default:
@@ -250,56 +391,64 @@ class CaliforniaPDFFormService {
 
   /**
    * Generate multiple PDFs for California guardianship forms
+   * Uses HTML-to-PDF generation for maximum compatibility
    */
   async generateGuardianshipForms(caseData: any): Promise<{ [formType: string]: Buffer }> {
     const forms: { [formType: string]: Buffer } = {};
+    const formData = caseData.form_data || {};
 
-    // Define the forms we want to generate
-    const formTypes = ['GC-210', 'GC-220', 'FL-105', 'GC-020'];
+    // Prepare data for HTML generation
+    const htmlData = {
+      ...formData,
+      case_number: caseData.id,
+      filing_county: formData.filing_county || '',
+      // Ensure consistent field naming
+      minor_name: formData.minor_name || formData.minor_full_name || '',
+      guardian_name: formData.guardian_name || '',
+      mother_name: formData.mother_name || formData.mother_full_name || '',
+      father_name: formData.father_name || formData.father_full_name || '',
+    };
 
     try {
-      // Generate each form with proper field mapping
-      for (const formType of formTypes) {
-        const templatePath = `${process.cwd()}/public/templates/${formType}.pdf`;
+      console.log(`🎨 Generating PDFs using HTML-to-PDF method...`);
 
-        try {
-          // Check if template file exists
-          const fs = require('fs');
-          if (!fs.existsSync(templatePath)) {
-            console.warn(`Template ${formType}.pdf not found. Creating placeholder PDF.`);
-
-            // Generate a placeholder PDF with form data for testing
-            const formFieldData = this.mapCaseDataToFormFields(caseData, formType);
-            forms[formType] = await this.generatePlaceholderPDF(formType, formFieldData);
-
-            console.log(`Generated placeholder ${formType} successfully with ${Object.keys(formFieldData).length} fields`);
-            continue;
-          }
-
-          // Map case data to specific form fields for this form type
-          const formFieldData = this.mapCaseDataToFormFields(caseData, formType);
-
-          forms[formType] = await this.fillPDFForm({
-            templatePath,
-            formData: formFieldData,
-            outputFileName: `${formType}_${caseData.id}.pdf`
-          });
-
-          console.log(`Generated ${formType} successfully with ${Object.keys(formFieldData).length} fields`);
-        } catch (error) {
-          console.error(`Failed to generate ${formType}:`, error);
-
-          // Generate placeholder PDF as fallback
-          try {
-            const formFieldData = this.mapCaseDataToFormFields(caseData, formType);
-            forms[formType] = await this.generatePlaceholderPDF(formType, formFieldData);
-            console.log(`Generated fallback placeholder for ${formType}`);
-          } catch (fallbackError) {
-            console.error(`Failed to generate fallback for ${formType}:`, fallbackError);
-          }
-        }
+      // Generate GC-210
+      try {
+        console.log('Generating GC-210 (Petition for Appointment of Guardian)...');
+        forms['GC-210'] = await htmlPDFGenerator.generateGC210(htmlData);
+        console.log('✓ GC-210 generated successfully');
+      } catch (error) {
+        console.error('❌ Failed to generate GC-210:', error);
       }
 
+      // Generate GC-220
+      try {
+        console.log('Generating GC-220 (SIJS Petition)...');
+        forms['GC-220'] = await htmlPDFGenerator.generateGC220(htmlData);
+        console.log('✓ GC-220 generated successfully');
+      } catch (error) {
+        console.error('❌ Failed to generate GC-220:', error);
+      }
+
+      // Generate FL-105
+      try {
+        console.log('Generating FL-105 (UCCJEA Declaration)...');
+        forms['FL-105'] = await htmlPDFGenerator.generateFL105(htmlData);
+        console.log('✓ FL-105 generated successfully');
+      } catch (error) {
+        console.error('❌ Failed to generate FL-105:', error);
+      }
+
+      // Generate GC-020
+      try {
+        console.log('Generating GC-020 (Notice of Hearing)...');
+        forms['GC-020'] = await htmlPDFGenerator.generateGC020(htmlData);
+        console.log('✓ GC-020 generated successfully');
+      } catch (error) {
+        console.error('❌ Failed to generate GC-020:', error);
+      }
+
+      console.log(`✅ Generated ${Object.keys(forms).length} PDFs successfully`);
       return forms;
 
     } catch (error) {
