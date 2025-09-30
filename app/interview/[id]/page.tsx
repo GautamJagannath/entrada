@@ -481,7 +481,23 @@ export default function InterviewPage({ params }: { params: Promise<{ id: string
                 <Label>Does the minor have siblings?</Label>
                 <RadioGroup
                   value={formData.has_siblings || ''}
-                  onValueChange={(value) => updateField('has_siblings', value)}
+                  onValueChange={(value) => {
+                    updateField('has_siblings', value);
+                    // Initialize sibling count when selecting "yes"
+                    if (value === 'yes' && !formData.sibling_count) {
+                      updateField('sibling_count', 1);
+                    }
+                    // Clear siblings when selecting "no"
+                    if (value === 'no') {
+                      updateField('sibling_count', 0);
+                      // Clear all sibling data
+                      for (let i = 1; i <= 10; i++) {
+                        updateField(`sibling_${i}_name`, '');
+                        updateField(`sibling_${i}_age`, '');
+                        updateField(`sibling_${i}_relationship`, '');
+                      }
+                    }
+                  }}
                   className="flex gap-6"
                 >
                   <div className="flex items-center space-x-2">
@@ -495,19 +511,101 @@ export default function InterviewPage({ params }: { params: Promise<{ id: string
                 </RadioGroup>
 
                 {formData.has_siblings === 'yes' && (
-                  <div className="animate-in slide-in-from-top-2 space-y-4">
-                    <div>
-                      <Label htmlFor="sibling_1_name">Sibling 1 - Name</Label>
-                      <Input
-                        id="sibling_1_name"
-                        value={formData.sibling_1_name || ''}
-                        onChange={(e) => updateField('sibling_1_name', e.target.value)}
-                        className="mt-1"
-                      />
-                    </div>
-                    <Button variant="outline" size="sm" className="text-blue-600">
-                      + Add another sibling
-                    </Button>
+                  <div className="animate-in slide-in-from-top-2 space-y-4 pl-4 border-l-2 border-blue-200">
+                    {/* Dynamic sibling fields */}
+                    {Array.from({ length: formData.sibling_count || 1 }).map((_, index) => {
+                      const siblingNum = index + 1;
+                      return (
+                        <div key={siblingNum} className="space-y-3 p-4 bg-gray-50 rounded-lg">
+                          <div className="flex items-center justify-between">
+                            <h4 className="font-medium text-sm text-gray-700">Sibling {siblingNum}</h4>
+                            {siblingNum > 1 && (
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => {
+                                  // Remove this sibling
+                                  const newCount = (formData.sibling_count || 1) - 1;
+                                  updateField('sibling_count', newCount);
+                                  // Shift remaining siblings down
+                                  for (let i = siblingNum; i <= (formData.sibling_count || 1); i++) {
+                                    updateField(`sibling_${i}_name`, formData[`sibling_${i + 1}_name`] || '');
+                                    updateField(`sibling_${i}_age`, formData[`sibling_${i + 1}_age`] || '');
+                                    updateField(`sibling_${i}_relationship`, formData[`sibling_${i + 1}_relationship`] || '');
+                                  }
+                                  // Clear the last one
+                                  updateField(`sibling_${(formData.sibling_count || 1)}_name`, '');
+                                  updateField(`sibling_${(formData.sibling_count || 1)}_age`, '');
+                                  updateField(`sibling_${(formData.sibling_count || 1)}_relationship`, '');
+                                }}
+                                className="text-red-600 hover:text-red-700"
+                              >
+                                Remove
+                              </Button>
+                            )}
+                          </div>
+
+                          <div>
+                            <Label htmlFor={`sibling_${siblingNum}_name`}>Full Name</Label>
+                            <Input
+                              id={`sibling_${siblingNum}_name`}
+                              value={formData[`sibling_${siblingNum}_name`] || ''}
+                              onChange={(e) => updateField(`sibling_${siblingNum}_name`, e.target.value)}
+                              placeholder="Sibling's full name"
+                              className="mt-1"
+                            />
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-4">
+                            <div>
+                              <Label htmlFor={`sibling_${siblingNum}_age`}>Age</Label>
+                              <Input
+                                id={`sibling_${siblingNum}_age`}
+                                type="number"
+                                value={formData[`sibling_${siblingNum}_age`] || ''}
+                                onChange={(e) => updateField(`sibling_${siblingNum}_age`, e.target.value)}
+                                placeholder="Age"
+                                className="mt-1"
+                              />
+                            </div>
+
+                            <div>
+                              <Label htmlFor={`sibling_${siblingNum}_relationship`}>Relationship</Label>
+                              <Select
+                                value={formData[`sibling_${siblingNum}_relationship`] || ''}
+                                onValueChange={(value) => updateField(`sibling_${siblingNum}_relationship`, value)}
+                              >
+                                <SelectTrigger id={`sibling_${siblingNum}_relationship`} className="mt-1">
+                                  <SelectValue placeholder="Select relationship" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="full">Full sibling</SelectItem>
+                                  <SelectItem value="half">Half sibling</SelectItem>
+                                  <SelectItem value="step">Step sibling</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+
+                    {/* Add another sibling button */}
+                    {(formData.sibling_count || 1) < 10 && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          const newCount = (formData.sibling_count || 1) + 1;
+                          updateField('sibling_count', newCount);
+                        }}
+                        className="text-blue-600 border-blue-300 hover:bg-blue-50"
+                      >
+                        + Add another sibling
+                      </Button>
+                    )}
                   </div>
                 )}
               </div>
