@@ -35,14 +35,17 @@ export async function POST(request: NextRequest) {
     const formsData: { [key: string]: { name: string; data: string; size: number } } = {};
 
     for (const [formType, buffer] of Object.entries(generatedForms)) {
+      console.log(`Processing ${formType}: ${buffer.length} bytes`);
       formsData[formType] = {
         name: `${formType}_${caseData.id}.pdf`,
         data: buffer.toString('base64'),
         size: buffer.length
       };
+      console.log(`✓ ${formType} encoded to base64: ${formsData[formType].data.length} chars`);
     }
 
     console.log(`Successfully generated ${Object.keys(generatedForms).length} PDF forms`);
+    console.log('Form types:', Object.keys(formsData));
 
     return NextResponse.json({
       success: true,
