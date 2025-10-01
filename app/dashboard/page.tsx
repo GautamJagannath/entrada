@@ -117,9 +117,12 @@ export default function Dashboard() {
     }
   };
 
-  const downloadPDFs = (forms: { [key: string]: { name: string; data: string } }) => {
-    Object.entries(forms).forEach(([formType, formData]) => {
+  const downloadPDFs = async (forms: { [key: string]: { name: string; data: string } }) => {
+    for (const [formType, formData] of Object.entries(forms)) {
       try {
+        console.log(`Downloading ${formType}: ${formData.name}`);
+        console.log(`Base64 length: ${formData.data.length}`);
+
         // Convert base64 to blob
         const binaryString = atob(formData.data);
         const bytes = new Uint8Array(binaryString.length);
@@ -127,8 +130,12 @@ export default function Dashboard() {
           bytes[i] = binaryString.charCodeAt(i);
         }
 
+        console.log(`Binary length: ${bytes.length}`);
+
         const blob = new Blob([bytes], { type: 'application/pdf' });
         const url = window.URL.createObjectURL(blob);
+
+        console.log(`Blob size: ${blob.size}`);
 
         // Create download link
         const link = document.createElement('a');
@@ -140,10 +147,15 @@ export default function Dashboard() {
 
         // Clean up
         window.URL.revokeObjectURL(url);
+
+        console.log(`✓ Downloaded ${formType}`);
+
+        // Wait 500ms between downloads to prevent browser issues
+        await new Promise(resolve => setTimeout(resolve, 500));
       } catch (error) {
         console.error(`Error downloading ${formType}:`, error);
       }
-    });
+    }
   };
 
   const filteredCases = searchCases(cases, searchTerm);
