@@ -1,0 +1,8 @@
+{
+  "buildCommand": "cd guardianship-forms && npm install && npm run build",
+  "outputDirectory": "guardianship-forms/.next",
+  "installCommand": "cd guardianship-forms && npm install",
+  "framework": "nextjs",
+  "rootDirectory": "guardianship-forms"
+}
+
