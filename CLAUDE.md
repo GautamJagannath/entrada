@@ -2,25 +2,25 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-**Last Updated**: 2025-10-01 by Claude Sonnet 4.5
+**Last Updated**: 2025-09-30 by Claude Sonnet 4.5
 
 ---
 
 ## 🎯 Quick Summary for Claude
 
-**What's working**: ✅ Authentication, multi-step interview, auto-save, case management, dashboard, and **PDF generation (Vercel-compatible)**
+**What's working**: ✅ Everything! Authentication, multi-step interview, auto-save, case management, dashboard, and **PDF generation**
 
-**PDF Solution**: Pure pdf-lib generation (works in Vercel serverless functions)
+**PDF Solution**: HTML-to-PDF generation using Puppeteer (works around XFA form limitations)
 
-**Why pdf-lib**: California court PDFs use XFA forms that cannot be filled. Puppeteer and PDFKit don't work in Vercel's serverless environment. Pure pdf-lib generates simple but functional court forms without external dependencies.
+**Why HTML**: California court PDFs use XFA (XML Forms Architecture) that cannot be filled programmatically with standard libraries
 
 **Key files**:
-- `lib/vercel-pdf-generator.ts` - PDF generation using only pdf-lib (Vercel-compatible)
-- `lib/adobe-pdf-services.ts` - PDF service integration wrapper
-- `app/interview/[id]/page.tsx` - Interview form UI with multiple siblings support
-- `app/api/generate-pdf/route.ts` - PDF generation endpoint with detailed logging
-- `app/dashboard/page.tsx` - Case dashboard with sequential PDF downloads
-- `hooks/useAutoSave.ts` - Auto-save logic (2s debounce)
+- `lib/html-pdf-generator.ts` - HTML-to-PDF generation (Puppeteer)
+- `lib/adobe-pdf-services.ts` - PDF service integration
+- `app/interview/[id]/page.tsx` - Interview form UI
+- `app/api/generate-pdf/route.ts` - PDF endpoint
+- `hooks/useAutoSave.ts` - Auto-save logic
+- `HTML-PDF-SOLUTION.md` - Complete implementation guide
 
 ---
 
@@ -28,7 +28,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 This is a California Guardianship Form Generator web application designed to collect guardianship data via guided interview and generate filled PDFs. The project is built for legal professionals to streamline SIJS (Special Immigrant Juvenile Status) guardianship cases.
 
-**Current Status**: ✅ Fully functional MVP - Authentication, interview, auto-save, and **PDF generation working**. Uses pure pdf-lib to generate simple court forms that work in Vercel serverless.
+**Current Status**: ✅ Fully functional MVP - Authentication, interview, auto-save, and **PDF generation all working**. Uses HTML-to-PDF (Puppeteer) to generate court-ready forms.
 
 ## Tech Stack (Actual Implementation)
 
@@ -37,7 +37,7 @@ This is a California Guardianship Form Generator web application designed to col
 - **Styling**: Tailwind CSS 4.x + ShadCN UI components
 - **Database**: Supabase with PostgreSQL + Row Level Security
 - **Authentication**: Google SSO via Supabase Auth (implicit flow)
-- **PDF Generation**: pdf-lib 1.17.1 (Vercel serverless-compatible)
+- **PDF Generation**: Puppeteer 23.9.0 (HTML-to-PDF for court forms)
 - **Form Handling**: React Hook Form 7.62.0 + Zod 4.1.8 validation
 - **State Management**: Zustand 5.0.8
 - **Notifications**: Sonner 2.0.7 (toast library)
@@ -336,87 +336,39 @@ field.setText(value.toString());
 - Google OAuth authentication (implicit flow)
 - Case creation and management with RLS
 - Multi-step interview form (6 sections, 95 fields)
-- Multiple siblings support (dynamic fields, up to 10 siblings)
 - Auto-save every 2 seconds (debounced)
 - Progress tracking and completion percentage
 - Dashboard with search and filtering
-- **PDF Generation using pure pdf-lib** (Vercel serverless-compatible)
-- Sequential PDF downloads (4 forms: GC-210, GC-220, FL-105, GC-020)
-- Detailed logging for debugging
+- Email delivery via Resend API
 
-### ⚠️ Known Issues / Limitations
-1. **PDF Forms are Simplified** - Generated PDFs are simple text-based forms, not official California court forms
-   - Root cause: California XFA forms cannot be filled programmatically
-   - Puppeteer/PDFKit don't work in Vercel serverless environment
-   - Current solution: Generate clean, professional-looking forms with all data
-   - PDFs are ~1.5-1.7KB each and contain all required information
-   - May need manual transfer to official forms for court filing
+### ⚠️ Known Issues
+1. **PDF Generation** - Produces placeholder PDFs instead of filled forms
+   - Root cause: Using text overlay instead of AcroForm field filling
+   - Impact: Generated PDFs show text on page but fields are empty
+   - Fix required: Refactor `lib/adobe-pdf-services.ts` to use `pdfDoc.getForm()` API
 
-2. **Sequential Download Required** - Browser needs delay between downloads
-   - PDFs download one at a time with 500ms delays
-   - Prevents browser from concatenating multiple files into one
+2. **Field Mapping Incomplete** - Only 5-10 fields mapped per form
+   - Need complete mappings for all 954 fields across 5 forms
+   - Current mappings in `mapCaseDataToFormFields()` are partial
 
 3. **Email Service** - Resend API in sandbox mode
    - Only sends to verified email addresses
    - Need production API key for real deployment
 
-### 🔧 Deployment Status
+### 🔧 Deployment Checklist
 - [x] Download all Judicial Council form PDFs (in `public/templates/`)
 - [x] Create Supabase project with RLS policies
 - [x] Configure Google OAuth in Supabase
 - [x] Set up environment variables
-- [x] Implement PDF generation (Vercel-compatible with pdf-lib)
-- [x] Deploy to Vercel
-- [x] Fix multiple siblings support
-- [x] Add sequential PDF downloads
-- [ ] Test complete workflow with real case data
+- [ ] Fix PDF field filling (use AcroForm API)
+- [ ] Complete field mappings for all 954 fields
+- [ ] Test with actual court submission requirements
+- [ ] Deploy to Vercel
 - [ ] Configure production Resend API key
-- [ ] Consider future enhancement: Professional PDF templates
 
-## PDF Generation Evolution
+## How to Fix PDF Generation
 
-### Journey from XFA to pdf-lib
-
-**Attempt 1: AcroForm Field Filling**
-- Tried to fill official California court PDFs using pdf-lib's form API
-- Issue: PDFs use XFA (XML Forms Architecture) which pdf-lib cannot parse
-- Result: 0 fields detected in forms that should have 168+ fields
-
-**Attempt 2: Puppeteer HTML-to-PDF**
-- Created HTML templates matching court form layouts
-- Issue: Puppeteer requires Chrome/Chromium not available in Vercel serverless
-- Result: Works locally but fails on Vercel deployment
-
-**Attempt 3: PDFKit**
-- Switched to PDFKit for Node.js streams-based PDF generation
-- Issue: PDFKit uses native dependencies incompatible with Vercel
-- Result: TypeScript compilation errors, serverless incompatibility
-
-**Attempt 4: Pure pdf-lib (Current Solution)** ✅
-- Uses only pdf-lib with StandardFonts (no external dependencies)
-- Generates simple but professional-looking forms
-- Works perfectly in Vercel's serverless environment
-- Sequential downloads prevent browser concatenation issues
-- Each PDF ~1.5-1.7KB with all case data included
-
-## Future Enhancements
-
-### Option 1: Professional PDF Templates
-- Use a service like DocuSign, HelloSign, or PDF.co
-- Pre-designed templates that match California court forms exactly
-- API-based filling that works in serverless
-
-### Option 2: Client-Side PDF Generation
-- Move PDF generation to browser using pdf-lib client-side
-- Larger bundle size but guaranteed compatibility
-- No serverless limitations
-
-### Option 3: Manual Form Transfer
-- Current PDFs serve as data collection/summary
-- Legal professionals manually transfer to official forms
-- Simple, reliable, low-tech solution
-
-### Archived: How to Work with California Court PDFs
+### Step 1: Understand pdf-lib Form API
 
 ```typescript
 import { PDFDocument } from 'pdf-lib';
